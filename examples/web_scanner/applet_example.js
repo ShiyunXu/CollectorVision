@@ -1,5 +1,10 @@
 import { CodeJar } from "https://cdn.jsdelivr.net/npm/codejar@4.3.0/dist/codejar.js";
 import { createCollectorVisionScannerApplet } from "./lib/collectorvision-scanner-applet.mjs";
+import { ASSET_CHANNELS, resolveAssetChannel } from "./asset-channel.mjs";
+
+const ASSET_CHANNEL = resolveAssetChannel();
+const ASSET_BASE_PATH = ASSET_CHANNELS[ASSET_CHANNEL];
+const MANIFEST_URL = new URL(`${ASSET_BASE_PATH}/manifest.json`, import.meta.url).href;
 
 const CODE_KEY = "collectorvision_applet_example_code";
 const PRESET_KEY = "collectorvision_applet_example_preset";
@@ -522,6 +527,8 @@ async function createScanner(settings) {
   return createCollectorVisionScannerApplet({
     target: "#collectorvision",
     ...settings,
+    manifestUrl: MANIFEST_URL,
+    assetBasePath: ASSET_BASE_PATH,
     overlay: true,
     onResult(result) {
       updateCornerSignal(result?.confidence ?? 0);

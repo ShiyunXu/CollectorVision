@@ -1,5 +1,10 @@
 const BUILD_ID = "__BUILD_ID__";
+import { ASSET_CHANNELS, CHANNEL_ROOTS, resolveAssetChannel } from "./asset-channel.mjs";
+
 const CHANNEL_NAME = "collectorvision-monitor";
+const ASSET_CHANNEL = resolveAssetChannel();
+const ASSET_BASE_PATH = ASSET_CHANNELS[ASSET_CHANNEL];
+const CHANNEL_ROOT = CHANNEL_ROOTS[ASSET_CHANNEL];
 const ROI_KEY = "collectorvision_screen_monitor_roi";
 const SETTINGS_KEY = "collectorvision_screen_monitor_settings";
 const MAX_EVENTS = 250;
@@ -117,8 +122,8 @@ function bindUi() {
 
 async function initWorker() {
   try {
-    const manifest = await fetchJson("./assets/manifest.json");
-    const bundleMetadata = await fetchOptionalJson("./bundle-metadata.json");
+    const manifest = await fetchJson(`${ASSET_BASE_PATH}/manifest.json`);
+    const bundleMetadata = await fetchOptionalJson(`${CHANNEL_ROOT}/bundle-metadata.json`);
     renderVersionDebug(manifest, bundleMetadata);
     worker = new Worker(`./scanner.worker.mjs?v=${BUILD_ID}`, { type: "module" });
     worker.addEventListener("message", handleWorkerMessage);
@@ -130,6 +135,7 @@ async function initWorker() {
     worker.postMessage({
       type: "init",
       manifest,
+      assetBasePath: ASSET_BASE_PATH,
       enableWebGpu: false,
       minCornerConfidence: settings.minCornerConfidence,
       rotationInvariant: true,

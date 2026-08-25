@@ -1,11 +1,13 @@
 /**
  * Regression test for the web scanner `?channel=` asset selection.
  *
- * Executes the real `resolveAssetChannel` and `loadManifest` function bodies
- * lifted verbatim from `examples/web_scanner/app.js` inside a stubbed
- * environment (no DOM, no network, no npm deps). This guards the contract that
- * `?channel=testing` loads the testing manifest while unknown/missing channels
- * fall back to stable.
+ * `resolveAssetChannel` / `ASSET_CHANNELS` now live in the shared
+ * `examples/web_scanner/asset-channel.mjs` module (single source of truth for
+ * the scanner, playground, and monitor pages), so they are imported and tested
+ * directly. `loadManifest` still lives in `app.js` and is lifted verbatim into a
+ * stubbed environment. This guards the contract that `?channel=testing` loads
+ * the testing manifest while unknown/missing channels fall back to stable, and
+ * that all three deployed entry points consume the shared resolver.
  */
 
 import assert from 'node:assert/strict';
@@ -13,12 +15,25 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { ASSET_CHANNELS, CHANNEL_ROOTS, resolveAssetChannel } from '../../examples/web_scanner/asset-channel.mjs';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const APP_JS = resolve(__dirname, '../../examples/web_scanner/app.js');
+const WEB = resolve(__dirname, '../../examples/web_scanner');
+const APP_JS = resolve(WEB, 'app.js');
 const src = readFileSync(APP_JS, 'utf8');
 
-// Keep in sync with app.js — asserted below so drift fails loudly.
-const ASSET_CHANNELS = { stable: './assets', testing: './testing/assets' };
+// The shared module must map the channels the deployed bundles expect.
+assert.deepEqual(ASSET_CHANNELS, { stable: './assets', testing: './testing/assets' });
+assert.deepEqual(CHANNEL_ROOTS, { stable: '.', testing: './testing' });
+
+// Every deployed entry point must consume the shared resolver (no drift).
+for (const file of ['app.js', 'applet_example.js', 'screen_capture_monitor.js']) {
+  const text = readFileSync(resolve(WEB, file), 'utf8');
+  assert.ok(
+    /from ['"]\.\/asset-channel\.mjs['"]/.test(text),
+    `${file} should import from ./asset-channel.mjs`,
+  );
+}
 
 function extractFunction(name) {
   let start = src.indexOf(`async function ${name}`);
@@ -36,33 +51,21 @@ function extractFunction(name) {
   return src.slice(start, j);
 }
 
-function assertAppChannelsMatch() {
-  const decl = src.slice(src.indexOf('const ASSET_CHANNELS'), src.indexOf('};', src.indexOf('const ASSET_CHANNELS')) + 2);
-  for (const [channel, path] of Object.entries(ASSET_CHANNELS)) {
-    assert.ok(
-      decl.includes(`${channel}:`) && decl.includes(`"${path}"`),
-      `ASSET_CHANNELS in app.js should map ${channel} -> ${path}; got:\n${decl}`,
-    );
-  }
-}
-
-function buildEnv(search) {
+function buildLoadManifest() {
   let fetched = null;
-  const location = { search };
   const fetch = async (url) => {
     fetched = url;
     return { ok: true, status: 200, json: async () => ({ version: 'test' }) };
   };
   const factory = new Function(
-    'ASSET_CHANNELS', 'location', 'fetch', 'setText', 'readCachedAsset', 'writeCachedAsset',
-    `${extractFunction('resolveAssetChannel')}\n${extractFunction('loadManifest')}\n` +
-    'return { resolveAssetChannel, loadManifest };',
+    'ASSET_CHANNELS', 'fetch', 'setText', 'readCachedAsset', 'writeCachedAsset',
+    `${extractFunction('loadManifest')}\nreturn loadManifest;`,
   );
-  const api = factory(
-    ASSET_CHANNELS, location, fetch,
+  const loadManifest = factory(
+    ASSET_CHANNELS, fetch,
     () => {}, async () => null, async () => {},
   );
-  return { ...api, getFetched: () => fetched };
+  return { loadManifest, getFetched: () => fetched };
 }
 
 const cases = [
@@ -76,12 +79,11 @@ const cases = [
 ];
 
 let failures = 0;
-assertAppChannelsMatch();
 
 for (const { search, channel, base } of cases) {
-  const { resolveAssetChannel, loadManifest, getFetched } = buildEnv(search);
+  const { loadManifest, getFetched } = buildLoadManifest();
   try {
-    const resolved = resolveAssetChannel();
+    const resolved = resolveAssetChannel(search);
     assert.equal(resolved, channel, `resolveAssetChannel(${search}) channel`);
     const { assetBasePath } = await loadManifest(resolved);
     assert.equal(assetBasePath, base, `loadManifest(${search}) assetBasePath`);

@@ -1,6 +1,7 @@
 const DEFAULT_CONFIG = {
   manifestUrl: new URL("../assets/manifest.json", import.meta.url).href,
   workerUrl: new URL("../scanner.worker.mjs", import.meta.url).href,
+  assetBasePath: null,
   enableWebGpu: false,
   autoStart: true,
   scanIntervalMs: 900,
@@ -215,6 +216,7 @@ export class CollectorVisionScannerApplet extends EventTarget {
       this.worker.postMessage({
         type: "init",
         manifest: this.manifest,
+        assetBasePath: this.config.assetBasePath ?? undefined,
         enableWebGpu: this.config.enableWebGpu === true,
         minCornerConfidence: clamp01(this.config.minCornerConfidence),
       });

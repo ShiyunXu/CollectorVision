@@ -1,11 +1,9 @@
 // Replaced by the deploy-pages CI workflow with the actual short commit SHA.
 const BUILD_ID = "__BUILD_ID__";
 
+import { ASSET_CHANNELS, resolveAssetChannel } from "./asset-channel.mjs";
+
 const GITHUB_REPO = "HanClinto/CollectorVision";
-const ASSET_CHANNELS = {
-  stable: "./assets",
-  testing: "./testing/assets",
-};
 
 // DETECTOR_SIZE is kept here for the capture-bundle debug export.
 const DETECTOR_SIZE = 384;
@@ -27,6 +25,9 @@ const MATCH_SCORE_KEY = "cv_min_match_score";
 const ROTATION_INVARIANT_KEY = "cv_rotation_invariant_enabled";
 const MIN_MATCHES_DEFAULT = 2;
 const MATCHES_KEY = "cv_min_matches";
+const MIN_CORNER_CONFIDENCE_DEFAULT = 0.02;
+const MAX_CORNER_CONFIDENCE = 0.2;
+const CORNER_CONFIDENCE_KEY = "cv_min_corner_confidence";
 const SCAN_BUFFER_SIZE = 5;
 const SCANS_KEY = "cv_scans";
 const PERF_OVERLAY_KEY = "cv_perf_overlay_enabled";
@@ -1514,6 +1515,12 @@ function getMinMatches() {
   return Number.isFinite(stored) && stored >= 1 ? stored : MIN_MATCHES_DEFAULT;
 }
 
+function getMinCornerConfidence() {
+  const stored = Number.parseFloat(localStorage.getItem(CORNER_CONFIDENCE_KEY));
+  if (!Number.isFinite(stored)) return MIN_CORNER_CONFIDENCE_DEFAULT;
+  return Math.min(Math.max(stored, 0), MAX_CORNER_CONFIDENCE);
+}
+
 function isRotationInvariantEnabled() {
   return localStorage.getItem(ROTATION_INVARIANT_KEY) !== "false";
 }
@@ -1545,6 +1552,22 @@ function setupMinMatchesSlider() {
     const value = parseInt(slider.value, 10);
     label.textContent = value;
     localStorage.setItem(MATCHES_KEY, value);
+  });
+}
+
+function setupCornerConfidenceSlider(scannerWorker = null) {
+  const slider = document.getElementById("corner-threshold-slider");
+  const label = document.getElementById("corner-threshold-value");
+  if (!slider || !label) return;
+
+  slider.value = getMinCornerConfidence();
+  label.textContent = getMinCornerConfidence().toFixed(2);
+
+  slider.addEventListener("input", () => {
+    const value = Math.min(Math.max(Number.parseFloat(slider.value), 0), MAX_CORNER_CONFIDENCE);
+    label.textContent = value.toFixed(2);
+    localStorage.setItem(CORNER_CONFIDENCE_KEY, value);
+    scannerWorker?.postMessage({ type: "config", minCornerConfidence: value });
   });
 }
 
@@ -1964,13 +1987,6 @@ function createScannerLoop(
   };
 }
 
-function resolveAssetChannel() {
-  const requested = (new URLSearchParams(location.search).get("channel") ?? "stable")
-    .trim()
-    .toLowerCase();
-  return Object.hasOwn(ASSET_CHANNELS, requested) ? requested : "stable";
-}
-
 async function loadManifest(channel) {
   const assetBasePath = ASSET_CHANNELS[channel];
   const cached = await readCachedAsset(`manifest:${channel}`);
@@ -2096,6 +2112,7 @@ async function boot() {
   const scannerWorker = new Worker(scannerWorkerUrl, { type: "module" });
   const enricherWorkerUrl = new URL(`./enricher.worker.mjs?v=${BUILD_ID}`, import.meta.url);
   const enricherWorker = new Worker(enricherWorkerUrl, { type: "module" });
+  setupCornerConfidenceSlider(scannerWorker);
   recordBootTrace("boot:workers-created");
 
   // Wire up init-phase progress messages before posting 'init'.
@@ -2167,6 +2184,7 @@ async function boot() {
     assetBasePath,
     enableWebGpu: isWebGpuEnabled(),
     catalogLimit,
+    minCornerConfidence: getMinCornerConfidence(),
     rotationInvariant: isRotationInvariantEnabled(),
   });
   recordBootTrace("worker:init-posted", {

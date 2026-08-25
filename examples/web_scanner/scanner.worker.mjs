@@ -386,8 +386,17 @@ async function fetchWithProgress(url, responseType, onProgress) {
     throw new Error(`Failed to fetch ${url}: HTTP ${response.status}`);
   }
 
-  const total = Number.parseInt(response.headers.get("content-length") ?? "0", 10) || 0;
-  if (!response.body || total === 0) {
+  // When the server applies a transfer compression (gzip/br/deflate) the
+  // Content-Length header reports the *compressed* size, but response.body
+  // streams *decompressed* bytes.  Comparing the two makes the loaded amount
+  // overshoot the reported total (e.g. a misleading "3.0 MB / 2.8 MB"), so in
+  // that case treat the total as unknown and report loaded-only progress.
+  const encoding = (response.headers.get("content-encoding") ?? "").trim().toLowerCase();
+  const isCompressed = encoding !== "" && encoding !== "identity";
+  const declaredTotal = Number.parseInt(response.headers.get("content-length") ?? "0", 10) || 0;
+  const total = isCompressed ? 0 : declaredTotal;
+
+  if (!response.body) {
     const payload = responseType === "json" ? await response.json() : await response.arrayBuffer();
     onProgress?.(1, total || 1, total || 1);
     return payload;
@@ -404,8 +413,15 @@ async function fetchWithProgress(url, responseType, onProgress) {
     }
     chunks.push(value);
     loaded += value.length;
-    onProgress?.(loaded / total, loaded, total);
+    // total === 0 means the size is unknown (compressed response); report the
+    // running byte count with an indeterminate ratio so the UI can show
+    // loaded-only progress instead of an overshooting "loaded / total".
+    onProgress?.(total > 0 ? loaded / total : 0, loaded, total);
   }
+
+  // Emit a deterministic completion tick so downstream consumers mark the
+  // stage done even when the total was unknown and the ratio never reached 1.
+  onProgress?.(1, loaded, total || loaded);
 
   const blob = new Blob(chunks);
   if (responseType === "json") {

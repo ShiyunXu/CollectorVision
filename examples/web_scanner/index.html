@@ -260,6 +260,13 @@
             <input type="range" id="match-score-slider"
               class="threshold-slider"
               min="0.40" max="0.85" step="0.01" value="0.50" />
+            <div class="threshold-meter" aria-hidden="true">
+              <span class="threshold-meter__track">
+                <span class="threshold-meter__fill" id="match-score-meter-fill"></span>
+                <span class="threshold-meter__marker" id="match-score-meter-marker"></span>
+              </span>
+              <span class="threshold-meter__value" id="match-score-meter-value">—</span>
+            </div>
             <p class="capture-hint">Lower values accept weaker matches (more false positives); higher values require a stronger match. Default 0.50.</p>
             <label class="slider-row" for="min-matches-slider">
               <span class="slider-row__label">Matches needed</span>
@@ -276,6 +283,13 @@
             <input type="range" id="corner-threshold-slider"
               class="threshold-slider"
               min="0" max="0.2" step="0.01" value="0.02" />
+            <div class="threshold-meter" aria-hidden="true">
+              <span class="threshold-meter__track">
+                <span class="threshold-meter__fill" id="corner-threshold-meter-fill"></span>
+                <span class="threshold-meter__marker" id="corner-threshold-meter-marker"></span>
+              </span>
+              <span class="threshold-meter__value" id="corner-threshold-meter-value">—</span>
+            </div>
             <p class="capture-hint">Higher values require a sharper, better-framed card before scanning (fewer blurry false triggers). Default 0.02.</p>
             <label class="toggle-row" for="rotation-invariant-toggle">
               <span class="toggle-row__label">Scan upside-down cards</span>

@@ -1532,11 +1532,13 @@ function setupMatchScoreSlider() {
 
   slider.value = getMinMatchScore();
   label.textContent = getMinMatchScore().toFixed(2);
+  setMatchMeterMarker(getMinMatchScore());
 
   slider.addEventListener("input", () => {
     const value = Number.parseFloat(slider.value);
     label.textContent = value.toFixed(2);
     localStorage.setItem(MATCH_SCORE_KEY, value);
+    setMatchMeterMarker(value);
   });
 }
 
@@ -1562,13 +1564,59 @@ function setupCornerConfidenceSlider(scannerWorker = null) {
 
   slider.value = getMinCornerConfidence();
   label.textContent = getMinCornerConfidence().toFixed(2);
+  setSharpnessMeterMarker(getMinCornerConfidence());
 
   slider.addEventListener("input", () => {
     const value = Math.min(Math.max(Number.parseFloat(slider.value), 0), MAX_CORNER_CONFIDENCE);
     label.textContent = value.toFixed(2);
     localStorage.setItem(CORNER_CONFIDENCE_KEY, value);
+    setSharpnessMeterMarker(value);
     scannerWorker?.postMessage({ type: "config", minCornerConfidence: value });
   });
+}
+
+// Live "VU meter" readouts under the threshold sliders: show where the current
+// per-frame sharpness/match signal is hovering relative to the chosen threshold,
+// so the threshold can be set by eye like a mic-gate slider on a soundboard.
+function setSharpnessMeterMarker(threshold) {
+  const marker = document.getElementById("corner-threshold-meter-marker");
+  if (!marker) return;
+  const ratio = Math.min(Math.max(threshold, 0) / MAX_CORNER_CONFIDENCE, 1);
+  marker.style.left = `${(ratio * 100).toFixed(1)}%`;
+}
+
+function updateSharpnessMeter(confidence) {
+  const fill = document.getElementById("corner-threshold-meter-fill");
+  const value = document.getElementById("corner-threshold-meter-value");
+  if (!fill || !value) return;
+  const raw = Math.max(0, Number(confidence) || 0);
+  const ratio = Math.min(raw / MAX_CORNER_CONFIDENCE, 1);
+  fill.style.width = `${(ratio * 100).toFixed(1)}%`;
+  value.textContent = raw > MAX_CORNER_CONFIDENCE
+    ? `${MAX_CORNER_CONFIDENCE.toFixed(2)}+`
+    : raw.toFixed(2);
+}
+
+function setMatchMeterMarker(threshold) {
+  const marker = document.getElementById("match-score-meter-marker");
+  if (!marker) return;
+  const ratio = Math.min(Math.max(threshold, 0), 1);
+  marker.style.left = `${(ratio * 100).toFixed(1)}%`;
+}
+
+function updateMatchMeter(score) {
+  const fill = document.getElementById("match-score-meter-fill");
+  const value = document.getElementById("match-score-meter-value");
+  if (!fill || !value) return;
+  if (Number.isFinite(score)) {
+    const ratio = Math.min(Math.max(score, 0), 1);
+    fill.style.width = `${(ratio * 100).toFixed(1)}%`;
+    value.textContent = ratio.toFixed(2);
+  } else {
+    // No card in frame this scan, so there is no match score to report.
+    fill.style.width = "0%";
+    value.textContent = "—";
+  }
 }
 
 function setupRotationInvariantToggle() {
@@ -1860,6 +1908,8 @@ function createScannerLoop(
       timing: data.timing,
     }, { debugOnly: true });
     perfOverlay?.update(data);
+    updateSharpnessMeter(data.confidence);
+    updateMatchMeter(data.score);
 
     // Dispatch pending capture callback before any early returns.
     if (data.captureRequested && captureState.onCapture) {

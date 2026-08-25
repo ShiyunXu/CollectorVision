@@ -9,7 +9,12 @@ const GITHUB_REPO = "HanClinto/CollectorVision";
 const DETECTOR_SIZE = 384;
 const MIN_MATCH_SCORE_DEFAULT = 0.50;
 const PREVIEW_ASPECT = 16 / 9;
-const SCAN_INTERVAL_MS = 900;
+const SCAN_INTERVAL_DEFAULT_MS = 900;
+const SCAN_INTERVAL_MAX_MS = 1000;
+const SCAN_INTERVAL_KEY = "cv_scan_interval_ms";
+// While the worker is mid-scan the loop re-checks this often (ms) so that
+// "max speed" (0ms interval) sends the next frame promptly once it finishes.
+const SCAN_BUSY_POLL_MS = 20;
 const MOBILE_PREVIEW_INTERVAL_MS = 1000 / 15;
 
 const SOUND_PATHS = {
@@ -1521,6 +1526,16 @@ function getMinCornerConfidence() {
   return Math.min(Math.max(stored, 0), MAX_CORNER_CONFIDENCE);
 }
 
+function getScanIntervalMs() {
+  const stored = Number.parseInt(localStorage.getItem(SCAN_INTERVAL_KEY), 10);
+  if (!Number.isFinite(stored)) return SCAN_INTERVAL_DEFAULT_MS;
+  return Math.min(Math.max(stored, 0), SCAN_INTERVAL_MAX_MS);
+}
+
+function formatScanInterval(ms) {
+  return ms <= 0 ? "Max speed" : `${ms}ms`;
+}
+
 function isRotationInvariantEnabled() {
   return localStorage.getItem(ROTATION_INVARIANT_KEY) !== "false";
 }
@@ -1554,6 +1569,21 @@ function setupMinMatchesSlider() {
     const value = parseInt(slider.value, 10);
     label.textContent = value;
     localStorage.setItem(MATCHES_KEY, value);
+  });
+}
+
+function setupScanIntervalSlider() {
+  const slider = document.getElementById("scan-interval-slider");
+  const label = document.getElementById("scan-interval-value");
+  if (!slider || !label) return;
+
+  slider.value = getScanIntervalMs();
+  label.textContent = formatScanInterval(getScanIntervalMs());
+
+  slider.addEventListener("input", () => {
+    const value = Math.min(Math.max(parseInt(slider.value, 10) || 0, 0), SCAN_INTERVAL_MAX_MS);
+    label.textContent = formatScanInterval(value);
+    localStorage.setItem(SCAN_INTERVAL_KEY, value);
   });
 }
 
@@ -1684,7 +1714,7 @@ class PerformanceOverlay {
     const card = data?.cardPresent ? (data.cornersValid ? "card" : "bad-quad") : "no-card";
     const orientation = data?.orientation ? `  ${data.orientation}` : "";
     this.el.textContent = [
-      `scan ${SCAN_INTERVAL_MS}ms  result ${resultGap}  ${fps}`,
+      `scan ${formatScanInterval(getScanIntervalMs())}  result ${resultGap}  ${fps}`,
       `total ${formatMs(timing.totalMs)}  det ${formatMs(timing.detectMs)} (run ${formatMs(timing.detectorRunMs)})`,
       `dew ${formatMs(timing.dewarpMs)} (warp ${formatMs(timing.dewarpWarpMs)})  emb ${formatMs(timing.embedMs)} (run ${formatMs(timing.embedRunMs)})`,
       `prep det ${formatMs(timing.detectorInputMs)}  prep emb ${formatMs(timing.embedInputMs)}  lookup ${formatMs(timing.searchMs)}`,
@@ -1845,6 +1875,7 @@ function createScannerLoop(
 ) {
   const bucket = new ScanBucket();
   let timer = null;
+  let running = false;
   let workerBusy = false;
 
   scannerWorker.addEventListener("error", (event) => {
@@ -1997,20 +2028,36 @@ function createScannerLoop(
   return {
     stop() {
       if (timer) {
-        clearInterval(timer);
+        clearTimeout(timer);
         timer = null;
         recordBootTrace("scan:loop-stopped");
       }
+      running = false;
     },
     start() {
-      if (timer) {
+      if (running) {
         return;
       }
+      running = true;
       setText("camera-badge", "Scanning");
-      debugLog.info("scan interval", `${SCAN_INTERVAL_MS}ms`);
-      recordBootTrace("scan:loop-started", { intervalMs: SCAN_INTERVAL_MS });
-      timer = setInterval(async () => {
+      debugLog.info("scan interval", formatScanInterval(getScanIntervalMs()));
+      recordBootTrace("scan:loop-started", { intervalMs: getScanIntervalMs() });
+
+      // Self-rescheduling loop instead of a fixed setInterval so the "minimum
+      // frame interval" slider takes effect live. The workerBusy gate keeps
+      // scans from overlapping; while busy we re-check every SCAN_BUSY_POLL_MS
+      // so a 0ms ("max speed") interval sends the next frame as soon as the
+      // previous result lands. Effective FPS is therefore capped by whichever
+      // is larger: the chosen interval or the worker's per-frame time.
+      const scheduleNext = (delayMs) => {
+        timer = setTimeout(tick, delayMs);
+      };
+      const tick = async () => {
+        if (!running) {
+          return;
+        }
         if (workerBusy || !camera.stream) {
+          scheduleNext(SCAN_BUSY_POLL_MS);
           return;
         }
         workerBusy = true;
@@ -2032,7 +2079,9 @@ function createScannerLoop(
           debugLog.error("scan tick failed", error);
           setText("camera-badge", error?.message || "Scan error");
         }
-      }, SCAN_INTERVAL_MS);
+        scheduleNext(getScanIntervalMs());
+      };
+      scheduleNext(0);
     },
   };
 }
@@ -2106,6 +2155,7 @@ async function boot() {
   setupWebGpuToggle();
   setupMatchScoreSlider();
   setupMinMatchesSlider();
+  setupScanIntervalSlider();
   setupRotationInvariantToggle();
   setupViewToggle();
   setupActions(scans);

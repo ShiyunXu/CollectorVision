@@ -68,6 +68,31 @@ class ModelSelectionTests(unittest.TestCase):
             offline=False,
         )
 
+    def test_corner_detector_resolves_either_family(self) -> None:
+        for family, channel in (("cornelius", "stable"), ("fastweb-single", "testing")):
+            with self.subTest(family=family):
+                with (
+                    mock.patch(
+                        "collector_vision.model_artifacts.resolve_registered_model",
+                        return_value=Path(__file__),
+                    ) as resolve,
+                    mock.patch.object(
+                        NeuralCornerDetector,
+                        "_load",
+                        return_value=(mock.Mock(), "image", 384, True),
+                    ),
+                ):
+                    NeuralCornerDetector(family=family, channel=channel, offline=True)
+
+                resolve.assert_called_once_with(
+                    family,
+                    task="corner-detection",
+                    version=None,
+                    channel=channel,
+                    cache_dir=None,
+                    offline=True,
+                )
+
     def test_checkpoint_and_family_are_mutually_exclusive(self) -> None:
         with self.assertRaisesRegex(ValueError, "checkpoint or family/version"):
             NeuralCornerDetector(checkpoint=Path(__file__), family="cornelius")

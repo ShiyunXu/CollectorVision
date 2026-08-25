@@ -126,6 +126,28 @@ def _resolve_web_models(
     )
 
 
+def _detector_manifest_config(corner_model: ModelSpec) -> dict:
+    """Build the JS-facing detector config block for the web scanner manifest.
+
+    The web scanner worker (``scanner.worker.mjs``) reads this block to drive an
+    arbitrary corner-detector family: ``input_size`` sizes the input tensor,
+    ``preprocess`` selects the normalisation, and ``outputs`` maps the ONNX output
+    tensor names. Both the Cornelius (MobileViT) and Fastweb (EfficientViT)
+    families share the same SimCC I/O contract, so a single generic block works.
+    """
+    return {
+        "family": corner_model.family,
+        "architecture": corner_model.architecture,
+        "input_size": corner_model.input_size,
+        "preprocess": "imagenet-rgb",
+        "outputs": {
+            "corners": "corners",
+            "presence": "presence",
+            "sharpness": "sharpness",
+        },
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -230,17 +252,7 @@ def main() -> None:
             "detector": corner_model.version,
             "milo": embedder_model.version,
         },
-        "detector": {
-            "family": corner_model.family,
-            "architecture": corner_model.architecture,
-            "input_size": corner_model.input_size,
-            "preprocess": "imagenet-rgb",
-            "outputs": {
-                "corners": "corners",
-                "presence": "presence",
-                "sharpness": "sharpness",
-            },
-        },
+        "detector": _detector_manifest_config(corner_model),
         "catalog": {
             "embeddings": f"catalog/{args.catalog_key}-embeddings.f16.bin",
             "card_ids": f"catalog/{args.catalog_key}-card-ids.json",

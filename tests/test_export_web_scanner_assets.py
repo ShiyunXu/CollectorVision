@@ -44,6 +44,26 @@ class ExportWebScannerAssetsTests(unittest.TestCase):
             resolve.call_args_list, [mock.call(corner_model), mock.call(embedder_model)]
         )
 
+    def test_detector_manifest_config_is_js_compatible_for_both_families(self) -> None:
+        for family, expected_id in (
+            ("cornelius", "cornelius-2.12"),
+            ("fastweb-single", "fastweb-single-1.39"),
+        ):
+            with self.subTest(family=family):
+                model = get_model(family=family, channel="testing")
+                self.assertEqual(model.id, expected_id)
+
+                config = exporter._detector_manifest_config(model)
+
+                # Fields the scanner.worker.mjs resolveDetectorConfig() reads.
+                self.assertEqual(config["family"], family)
+                self.assertEqual(config["input_size"], 384)
+                self.assertEqual(config["preprocess"], "imagenet-rgb")
+                self.assertEqual(
+                    config["outputs"],
+                    {"corners": "corners", "presence": "presence", "sharpness": "sharpness"},
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

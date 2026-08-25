@@ -1959,7 +1959,9 @@ function createScannerLoop(
 }
 
 function resolveAssetChannel() {
-  const requested = new URLSearchParams(location.search).get("channel") ?? "stable";
+  const requested = (new URLSearchParams(location.search).get("channel") ?? "stable")
+    .trim()
+    .toLowerCase();
   return Object.hasOwn(ASSET_CHANNELS, requested) ? requested : "stable";
 }
 

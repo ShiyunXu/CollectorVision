@@ -71,7 +71,8 @@ const cases = [
   { search: '', channel: 'stable', base: './assets' },
   { search: '?channel=bogus', channel: 'stable', base: './assets' },
   { search: '?debug=1&channel=testing', channel: 'testing', base: './testing/assets' },
-  { search: '?channel=TESTING', channel: 'stable', base: './assets' }, // case-sensitive by design
+  { search: '?channel=TESTING', channel: 'testing', base: './testing/assets' }, // case-insensitive
+  { search: '?channel=%20Testing%20', channel: 'testing', base: './testing/assets' }, // trimmed + folded
 ];
 
 let failures = 0;

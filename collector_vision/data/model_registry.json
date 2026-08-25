@@ -3,11 +3,13 @@
   "channels": {
     "stable": {
       "cornelius": "cornelius-2.12",
+      "fastweb-single": "fastweb-single-1.39",
       "milo": "milo-1.0.0"
     },
     "testing": {
       "cornelius": "cornelius-2.12",
-      "milo": "milo-1.0.0"
+      "milo": "milo-1.0.0",
+      "fastweb-single": "fastweb-single-1.39"
     }
   },
   "models": {
@@ -21,7 +23,15 @@
       "revision": "9280009f5a66f75f952820d9dadb894909b759b7",
       "filename": "cornelius-2.12.onnx",
       "sha256": "650da3cc3e9ac778c6951de631f824ec1e63bdabf3aaa39a35d7435af625612e",
-      "size_bytes": 4407545
+      "size_bytes": 4407545,
+      "metrics": {
+        "normal_test_iou": 0.968911,
+        "normal_test_collapse": 18,
+        "rotation_stress_mean_iou": 0.970411,
+        "rotation_stress_p10_iou": 0.954621,
+        "rotation_stress_bad_lt_0_5": 0,
+        "rotation_stress_collapse": 0
+      }
     },
     "milo-1.0.0": {
       "family": "milo",
@@ -34,6 +44,44 @@
       "filename": "model.onnx",
       "sha256": "bd13d8d60383c69da04dce261f32e93fdaeaa8fd618fbc991e7385f71b3d45df",
       "size_bytes": 5191100
+    },
+    "fastweb-single-0.1.0": {
+      "family": "fastweb-single",
+      "version": "0.1.0",
+      "channel": "testing",
+      "codename": "corndog",
+      "codename_version": "2.12",
+      "task": "corner-detection",
+      "architecture": "efficientvit-b0-global-token-simcc",
+      "input_size": 384,
+      "repository": "HanClinto/ccgdetector-fastweb-single",
+      "revision": "13e1eb8c3b1afa1bc201e8619cf274e21a904a49",
+      "filename": "fastweb-single-0.1.0.onnx",
+      "sha256": "8acb8faba8df92cb6897c07119e68a5d6459b0fa26736e9aab547445230e7ee7",
+      "size_bytes": 3197383
+    },
+    "fastweb-single-1.39": {
+      "family": "fastweb-single",
+      "version": "1.39",
+      "channel": "stable+testing",
+      "codename": "corndog",
+      "codename_version": "1.39",
+      "task": "corner-detection",
+      "architecture": "efficientvit-b0-global-token-simcc",
+      "input_size": 384,
+      "repository": "HanClinto/ccgdetector-fastweb-single",
+      "revision": "898600883a02a90c51f0085f25fdecae0a6c48bf",
+      "filename": "fastweb-single-1.39.onnx",
+      "sha256": "05d2b90b928a5a3bf0f49aa90aa86211b2103d9c347c238fd18b4f544b3cb8ca",
+      "size_bytes": 3185226,
+      "metrics": {
+        "normal_test_iou": 0.968839,
+        "normal_test_collapse": 13,
+        "rotation_stress_mean_iou": 0.974255,
+        "rotation_stress_p10_iou": 0.960757,
+        "rotation_stress_bad_lt_0_5": 1,
+        "rotation_stress_collapse": 0
+      }
     }
   }
 }

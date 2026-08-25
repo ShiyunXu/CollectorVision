@@ -41,13 +41,30 @@ class ModelRegistryTests(unittest.TestCase):
 
         self.assertEqual(model.id, "milo-1.0.0")
 
+    def test_fastweb_single_resolves_as_corner_detector(self) -> None:
+        model = get_model(family="fastweb-single", channel="testing")
+
+        self.assertEqual(model.id, "fastweb-single-1.39")
+        self.assertEqual(model.family, "fastweb-single")
+        self.assertEqual(model.task, "corner-detection")
+        self.assertEqual(model.repository, "HanClinto/ccgdetector-fastweb-single")
+        self.assertEqual(len(model.sha256), 64)
+
     def test_channels_are_listed(self) -> None:
         self.assertEqual(available_channels(), ("stable", "testing"))
 
     def test_aliases_and_exact_ids_are_listed(self) -> None:
         self.assertEqual(
             available_models(),
-            ("cornelius", "cornelius-2.12", "milo", "milo-1.0.0"),
+            (
+                "cornelius",
+                "cornelius-2.12",
+                "fastweb-single",
+                "fastweb-single-0.1.0",
+                "fastweb-single-1.39",
+                "milo",
+                "milo-1.0.0",
+            ),
         )
 
     def test_unknown_model_lists_supported_options(self) -> None:

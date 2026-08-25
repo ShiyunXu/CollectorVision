@@ -1668,6 +1668,7 @@ class PerformanceOverlay {
     this.visible = false;
     this.lastResultAt = null;
     this.resultCount = 0;
+    this.emaFps = null;
     this.lastData = null;
     this.catalogBytes = estimateCatalogBytes(manifest, captureState?.catalogRows);
   }
@@ -1687,6 +1688,12 @@ class PerformanceOverlay {
     const resultGapMs = this.lastResultAt === null ? null : now - this.lastResultAt;
     this.lastResultAt = now;
     this.resultCount += 1;
+    if (resultGapMs && resultGapMs > 0) {
+      const instantFps = 1000 / resultGapMs;
+      // Exponential moving average smooths the per-frame jitter so the FPS
+      // readout is stable enough to read at a glance.
+      this.emaFps = this.emaFps === null ? instantFps : this.emaFps * 0.8 + instantFps * 0.2;
+    }
     this.lastData = { ...data, resultGapMs };
     this.render();
   }
@@ -1709,7 +1716,7 @@ class PerformanceOverlay {
     const threads = this.captureState?.numThreads ?? "—";
     const mode = this.captureState?.inferenceMode ?? "—";
     const resultGap = data?.resultGapMs ? formatMs(data.resultGapMs) : "—";
-    const fps = data?.resultGapMs ? `${(1000 / data.resultGapMs).toFixed(1)}fps` : "—";
+    const fps = this.emaFps !== null ? `${this.emaFps.toFixed(1)} fps` : "—";
     const score = Number.isFinite(data?.score) ? data.score.toFixed(3) : "—";
     const card = data?.cardPresent ? (data.cornersValid ? "card" : "bad-quad") : "no-card";
     const orientation = data?.orientation ? `  ${data.orientation}` : "";

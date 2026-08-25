@@ -91,8 +91,10 @@ def _sha256(path: Path) -> str:
 
 
 def _latest_catalog_filename(repo: str, catalog_key: str) -> str:
+    from collector_vision.model_registry import open_hf_url
+
     manifest_url = f"https://huggingface.co/{repo}/resolve/main/catalogs/manifest.json"
-    with urllib.request.urlopen(manifest_url, timeout=30) as response:
+    with open_hf_url(manifest_url, timeout=30) as response:
         manifest = json.loads(response.read().decode("utf-8"))
     entry = manifest.get(catalog_key)
     if not entry:

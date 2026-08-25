@@ -17,6 +17,7 @@ import time
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import timedelta
+from importlib.metadata import PackageNotFoundError, version
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,27 @@ class ModelSpec:
 
 _DEFAULT_REFRESH = timedelta(days=7)
 _REGISTRY_URL = "https://huggingface.co/HanClinto/CollectorVision/resolve/main/registry.json"
+
+
+def _user_agent() -> str:
+    """A descriptive User-Agent for Hugging Face requests.
+
+    Hugging Face's abuse protection challenges the default ``Python-urllib``
+    User-Agent — especially from cloud/CI IP ranges — returning HTTP 403. Sending
+    a descriptive agent (as ``huggingface_hub`` does) avoids that without adding a
+    dependency.
+    """
+    try:
+        pkg_version = version("collectorvision")
+    except PackageNotFoundError:
+        pkg_version = "0.0.0"
+    return f"collectorvision/{pkg_version} (+https://github.com/HanClinto/CollectorVision)"
+
+
+def open_hf_url(url: str, *, timeout: float):
+    """Open a Hugging Face URL with a descriptive User-Agent to avoid 403s."""
+    request = urllib.request.Request(url, headers={"User-Agent": _user_agent()})
+    return urllib.request.urlopen(request, timeout=timeout)
 
 
 class ModelRegistry:
@@ -170,7 +192,7 @@ def load_model_registry(
         return _load_cached_or_bootstrap(cache_path)
 
     try:
-        with urllib.request.urlopen(_REGISTRY_URL, timeout=10) as response:
+        with open_hf_url(_REGISTRY_URL, timeout=10) as response:
             data = json.loads(response.read().decode("utf-8"))
         registry = ModelRegistry(data)
         cache_path.parent.mkdir(parents=True, exist_ok=True)

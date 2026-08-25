@@ -36,7 +36,6 @@ from __future__ import annotations
 import json
 import os
 import time
-import urllib.request
 from datetime import timedelta
 from pathlib import Path
 
@@ -147,7 +146,9 @@ class HFD:
 
         url = self._base_url + "manifest.json"
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
+            from collector_vision.model_registry import open_hf_url
+
+            with open_hf_url(url, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             self._manifest_path().parent.mkdir(parents=True, exist_ok=True)
             self._manifest_path().write_text(json.dumps(data, indent=2), encoding="utf-8")

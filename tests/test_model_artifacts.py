@@ -70,11 +70,12 @@ class ModelArtifactTests(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", return_value=Response()) as urlopen:
             resolved = resolve_model_artifact(model, cache_dir=self.cache_dir)
 
-        url = urlopen.call_args.args[0]
+        request = urlopen.call_args.args[0]
         self.assertEqual(
-            url,
+            request.full_url,
             f"https://huggingface.co/{model.repository}/resolve/{model.revision}/{model.filename}",
         )
+        self.assertIn("collectorvision/", request.get_header("User-agent", ""))
         self.assertEqual(resolved.read_bytes(), content)
         self.assertFalse(
             list(resolved.parent.glob("*.download")), "temporary download file should be cleaned up"

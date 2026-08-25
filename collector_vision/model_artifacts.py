@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import os
-import urllib.request
 from pathlib import Path
 
-from collector_vision.model_registry import ModelSpec, load_model_registry
+from collector_vision.model_registry import ModelSpec, load_model_registry, open_hf_url
 
 
 def resolve_registered_model(
@@ -77,7 +76,7 @@ def _download_from_hub(model: ModelSpec, destination: Path) -> None:
     url = _hub_resolve_url(model)
     temp_path = destination.with_suffix(destination.suffix + ".download")
     try:
-        with urllib.request.urlopen(url, timeout=60) as response, temp_path.open("wb") as handle:
+        with open_hf_url(url, timeout=60) as response, temp_path.open("wb") as handle:
             for chunk in iter(lambda: response.read(1 << 20), b""):
                 handle.write(chunk)
         temp_path.replace(destination)

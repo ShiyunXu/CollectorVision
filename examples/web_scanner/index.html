@@ -278,12 +278,12 @@
             <p class="capture-hint">Recent frames that must agree before confirming. 1 = fastest; 4 = most reliable. Default 2.</p>
             <label class="slider-row" for="scan-interval-slider">
               <span class="slider-row__label">Minimum frame interval</span>
-              <span class="slider-row__value" id="scan-interval-value">900ms</span>
+              <span class="slider-row__value" id="scan-interval-value">50ms</span>
             </label>
             <input type="range" id="scan-interval-slider"
               class="threshold-slider"
-              min="0" max="1000" step="50" value="900" />
-            <p class="capture-hint">Minimum wait between scans. Lower is faster (more FPS, more CPU/battery); 0 = max speed (scan as fast as the device can process). Default 900ms.</p>
+              min="0" max="1000" step="50" value="50" />
+            <p class="capture-hint">Minimum wait between scans. Lower is faster (more FPS, more CPU/battery); 0 = max speed (scan as fast as the device can process). Default 50ms.</p>
             <label class="slider-row" for="corner-threshold-slider">
               <span class="slider-row__label">Sharpness threshold</span>
               <span class="slider-row__value" id="corner-threshold-value">0.02</span>

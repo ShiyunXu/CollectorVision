@@ -9,7 +9,7 @@ const GITHUB_REPO = "HanClinto/CollectorVision";
 const DETECTOR_SIZE = 384;
 const MIN_MATCH_SCORE_DEFAULT = 0.50;
 const PREVIEW_ASPECT = 16 / 9;
-const SCAN_INTERVAL_DEFAULT_MS = 900;
+const SCAN_INTERVAL_DEFAULT_MS = 50;
 const SCAN_INTERVAL_MAX_MS = 1000;
 const SCAN_INTERVAL_KEY = "cv_scan_interval_ms";
 // While the worker is mid-scan the loop re-checks this often (ms) so that

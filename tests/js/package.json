@@ -8,8 +8,9 @@
   },
   "private": true,
   "scripts": {
-    "test": "node --input-type=module --check < ../../examples/web_scanner/app.js && node --check ../../examples/web_scanner/scanner.worker.mjs && node test_channel_param.mjs && node test_pipeline.mjs",
-    "test:channel": "node test_channel_param.mjs"
+    "test": "node --input-type=module --check < ../../examples/web_scanner/app.js && node --check ../../examples/web_scanner/scanner.worker.mjs && node test_channel_param.mjs && node test_fetch_progress.mjs && node test_pipeline.mjs",
+    "test:channel": "node test_channel_param.mjs",
+    "test:progress": "node test_fetch_progress.mjs"
   },
   "dependencies": {
     "canvas": "^2.11.2",

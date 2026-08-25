@@ -380,7 +380,7 @@ async function writeCachedAsset(key, value) {
 // HTTP helpers with progress reporting + IndexedDB caching
 // ---------------------------------------------------------------------------
 
-async function fetchWithProgress(url, responseType, onProgress) {
+async function fetchWithProgress(url, responseType, onProgress, expectedSize = 0) {
   const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`Failed to fetch ${url}: HTTP ${response.status}`);
@@ -389,12 +389,15 @@ async function fetchWithProgress(url, responseType, onProgress) {
   // When the server applies a transfer compression (gzip/br/deflate) the
   // Content-Length header reports the *compressed* size, but response.body
   // streams *decompressed* bytes.  Comparing the two makes the loaded amount
-  // overshoot the reported total (e.g. a misleading "3.0 MB / 2.8 MB"), so in
-  // that case treat the total as unknown and report loaded-only progress.
+  // overshoot the reported total (e.g. a misleading "3.0 MB / 2.8 MB").  When
+  // the manifest supplies the authoritative uncompressed size we use it; only
+  // fall back to Content-Length for uncompressed responses, and otherwise
+  // treat the total as unknown and report loaded-only progress.
   const encoding = (response.headers.get("content-encoding") ?? "").trim().toLowerCase();
   const isCompressed = encoding !== "" && encoding !== "identity";
   const declaredTotal = Number.parseInt(response.headers.get("content-length") ?? "0", 10) || 0;
-  const total = isCompressed ? 0 : declaredTotal;
+  const knownSize = Number.isFinite(expectedSize) && expectedSize > 0 ? expectedSize : 0;
+  const total = knownSize || (isCompressed ? 0 : declaredTotal);
 
   if (!response.body) {
     const payload = responseType === "json" ? await response.json() : await response.arrayBuffer();
@@ -413,10 +416,12 @@ async function fetchWithProgress(url, responseType, onProgress) {
     }
     chunks.push(value);
     loaded += value.length;
-    // total === 0 means the size is unknown (compressed response); report the
-    // running byte count with an indeterminate ratio so the UI can show
-    // loaded-only progress instead of an overshooting "loaded / total".
-    onProgress?.(total > 0 ? loaded / total : 0, loaded, total);
+    // total === 0 means the size is unknown (compressed response with no
+    // manifest size); report the running byte count with an indeterminate
+    // ratio so the UI can show loaded-only progress instead of an
+    // overshooting "loaded / total".  Clamp the ratio so a slightly
+    // conservative manifest size never reports over 100%.
+    onProgress?.(total > 0 ? Math.min(loaded / total, 1) : 0, loaded, total);
   }
 
   // Emit a deterministic completion tick so downstream consumers mark the
@@ -430,7 +435,7 @@ async function fetchWithProgress(url, responseType, onProgress) {
   return await blob.arrayBuffer();
 }
 
-async function fetchJsonCached(url, version, onProgress) {
+async function fetchJsonCached(url, version, onProgress, expectedSize = 0) {
   const key = `${version}:${url}:json`;
   const cached = await readCachedAsset(key);
   if (cached) {
@@ -439,12 +444,12 @@ async function fetchJsonCached(url, version, onProgress) {
   }
   const json = await fetchWithProgress(url, "json", (ratio, loaded, total) => {
     onProgress?.(ratio, loaded, total, false);
-  });
+  }, expectedSize);
   await writeCachedAsset(key, json);
   return json;
 }
 
-async function fetchBufferCached(url, version, onProgress) {
+async function fetchBufferCached(url, version, onProgress, expectedSize = 0) {
   const key = `${version}:${url}:buffer`;
   const cached = await readCachedAsset(key);
   if (cached) {
@@ -453,7 +458,7 @@ async function fetchBufferCached(url, version, onProgress) {
   }
   const buffer = await fetchWithProgress(url, "buffer", (ratio, loaded, total) => {
     onProgress?.(ratio, loaded, total, false);
-  });
+  }, expectedSize);
   await writeCachedAsset(key, buffer);
   return buffer;
 }
@@ -601,21 +606,31 @@ class WorkerRuntime {
 
   async load(onStage) {
     const version = this.manifest.version;
+    // Authoritative *uncompressed* byte sizes from the manifest, keyed by the
+    // same relative asset paths we fetch.  Used as the progress total because
+    // GitHub Pages serves these assets compressed and the browser's
+    // Content-Length then reports the smaller compressed size.
+    const assetBytes = this.manifest.asset_bytes ?? {};
+    const sizeOf = (relPath) => assetBytes[relPath] ?? 0;
     // Use per-model content hashes as cache keys when available so that a new
     // model weight file (same filename, different content) always busts the
     // IndexedDB entry, even if the bundle version string hasn't changed.
     const hashes = this.manifest.model_hashes ?? {};
     const detectorVersion = hashes[this.detectorConfig.modelKey] ?? version;
     const embedderVersion = hashes.milo       ?? version;
+    const detectorRel = this.manifest.models[this.detectorConfig.modelKey];
+    const embedderRel = this.manifest.models.milo;
     const detectorBuffer = await fetchBufferCached(
-      `${this.assetBasePath}/${this.manifest.models[this.detectorConfig.modelKey]}`,
+      `${this.assetBasePath}/${detectorRel}`,
       detectorVersion,
       (ratio, loaded, total, cached) => onStage?.("detector", ratio, loaded, total, cached),
+      sizeOf(detectorRel),
     );
     const embedderBuffer = await fetchBufferCached(
-      `${this.assetBasePath}/${this.manifest.models.milo}`,
+      `${this.assetBasePath}/${embedderRel}`,
       embedderVersion,
       (ratio, loaded, total, cached) => onStage?.("embedder", ratio, loaded, total, cached),
+      sizeOf(embedderRel),
     );
 
     // Use as many threads as the device has cores, capped at 4.
@@ -648,15 +663,22 @@ class WorkerRuntime {
       `${this.assetBasePath}/${this.manifest.catalog.embeddings}`,
       version,
       (ratio, loaded, total, cached) => onStage?.("catalog", ratio * 0.92, loaded, total, cached),
+      sizeOf(this.manifest.catalog.embeddings),
     );
     const ids = await fetchJsonCached(
       `${this.assetBasePath}/${this.manifest.catalog.card_ids}`,
       version,
       (ratio, loaded, total, cached) => onStage?.("catalog", 0.92 + ratio * 0.08, loaded, total, cached),
+      sizeOf(this.manifest.catalog.card_ids),
     );
     const secondarySource = resolveSecondaryIdSource(this.manifest.catalog);
     const secondaryIds = secondarySource
-      ? await fetchJsonCached(`${this.assetBasePath}/${secondarySource.assetPath}`, version)
+      ? await fetchJsonCached(
+          `${this.assetBasePath}/${secondarySource.assetPath}`,
+          version,
+          undefined,
+          sizeOf(secondarySource.assetPath),
+        )
       : null;
     // Keep the catalog in its packed float16 form.  Expanding the full MTG
     // matrix to Float32Array roughly doubles steady-state catalog memory and

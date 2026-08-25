@@ -234,6 +234,28 @@ def main() -> None:
     detector_hash = _sha256(detector_path)
     milo_hash = _sha256(milo_path)
 
+    embeddings_rel = f"catalog/{args.catalog_key}-embeddings.f16.bin"
+    card_ids_rel = f"catalog/{args.catalog_key}-card-ids.json"
+    oracle_ids_rel = (
+        f"catalog/{args.catalog_key}-oracle-ids.json"
+        if oracle_ids_path is not None
+        else None
+    )
+
+    # Authoritative *uncompressed* byte sizes, keyed by the same relative paths
+    # the web scanner fetches.  GitHub Pages serves these assets gzip/br-encoded,
+    # so the browser's Content-Length reports the compressed transfer size and
+    # can't be used for an accurate "loaded / total" readout — the worker uses
+    # these values instead.
+    asset_bytes = {
+        "models/detector.onnx": detector_path.stat().st_size,
+        "models/milo.onnx": milo_path.stat().st_size,
+        embeddings_rel: embeddings_path.stat().st_size,
+        card_ids_rel: card_ids_path.stat().st_size,
+    }
+    if oracle_ids_path is not None:
+        asset_bytes[oracle_ids_rel] = oracle_ids_path.stat().st_size
+
     manifest = {
         "version": bundle_version,
         "models": {
@@ -253,11 +275,12 @@ def main() -> None:
             "milo": embedder_model.version,
         },
         "detector": _detector_manifest_config(corner_model),
+        "asset_bytes": asset_bytes,
         "catalog": {
-            "embeddings": f"catalog/{args.catalog_key}-embeddings.f16.bin",
-            "card_ids": f"catalog/{args.catalog_key}-card-ids.json",
+            "embeddings": embeddings_rel,
+            "card_ids": card_ids_rel,
             **(
-                {"oracle_ids": f"catalog/{args.catalog_key}-oracle-ids.json"}
+                {"oracle_ids": oracle_ids_rel}
                 if oracle_ids_path is not None
                 else {}
             ),

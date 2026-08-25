@@ -641,24 +641,46 @@ class WorkerRuntime {
       (ratio, loaded, total, cached) => onStage?.("embedder", ratio, loaded, total, cached),
       sizeOf(embedderRel),
     );
+    // The catalog is fetched as several independent assets (embeddings +
+    // card/oracle IDs) that now stream concurrently.  They all report to the
+    // single "catalog" loading step, so reporting each fetch's own loaded/total
+    // makes the note clobber itself and "flash" (e.g. 27 MB embeddings jumping
+    // to a 4.2 MB card-ids figure when the smaller fetch finishes last).
+    // Aggregate them into one combined loaded/total, and drive the bar ratio
+    // from the byte fraction so it reflects real overall catalog progress.
+    const secondarySource = resolveSecondaryIdSource(this.manifest.catalog);
+    const catalogTotalBytes =
+      sizeOf(this.manifest.catalog.embeddings) +
+      sizeOf(this.manifest.catalog.card_ids) +
+      (secondarySource ? sizeOf(secondarySource.assetPath) : 0);
+    const catalogLoaded = new Map();
+    const reportCatalog = (key, loaded, cached) => {
+      catalogLoaded.set(key, loaded);
+      let loadedSum = 0;
+      for (const value of catalogLoaded.values()) loadedSum += value;
+      const ratio = catalogTotalBytes > 0
+        ? Math.min(loadedSum / catalogTotalBytes, 1)
+        : 0;
+      onStage?.("catalog", ratio, loadedSum, catalogTotalBytes, cached);
+    };
+
     const embeddingPromise = fetchBufferCached(
       `${this.assetBasePath}/${this.manifest.catalog.embeddings}`,
       version,
-      (ratio, loaded, total, cached) => onStage?.("catalog", ratio * 0.92, loaded, total, cached),
+      (ratio, loaded, total, cached) => reportCatalog("embeddings", loaded, cached),
       sizeOf(this.manifest.catalog.embeddings),
     );
     const idsPromise = fetchJsonCached(
       `${this.assetBasePath}/${this.manifest.catalog.card_ids}`,
       version,
-      (ratio, loaded, total, cached) => onStage?.("catalog", 0.92 + ratio * 0.08, loaded, total, cached),
+      (ratio, loaded, total, cached) => reportCatalog("card_ids", loaded, cached),
       sizeOf(this.manifest.catalog.card_ids),
     );
-    const secondarySource = resolveSecondaryIdSource(this.manifest.catalog);
     const secondaryPromise = secondarySource
       ? fetchJsonCached(
           `${this.assetBasePath}/${secondarySource.assetPath}`,
           version,
-          undefined,
+          (ratio, loaded, total, cached) => reportCatalog("secondary", loaded, cached),
           sizeOf(secondarySource.assetPath),
         )
       : Promise.resolve(null);

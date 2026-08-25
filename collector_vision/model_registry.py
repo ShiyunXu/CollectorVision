@@ -76,8 +76,14 @@ class ModelRegistry:
         elif normalized in self._models:
             model_id = normalized
         else:
+            channel_key = channel.lower().strip()
+            if channel_key not in self._channels:
+                known = ", ".join(self.available_channels())
+                raise ValueError(
+                    f"Unknown model channel {channel!r}. Available channels: {known}"
+                )
             try:
-                model_id = self._channels[channel.lower().strip()][normalized]
+                model_id = self._channels[channel_key][normalized]
             except KeyError:
                 available = ", ".join(self.available_models(channel=channel))
                 raise ValueError(

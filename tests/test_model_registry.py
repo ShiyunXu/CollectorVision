@@ -54,6 +54,17 @@ class ModelRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cornelius-2.12"):
             get_model("corndog")
 
+    def test_unknown_channel_fails_loudly(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Available channels: stable, testing"):
+            get_model(family="cornelius", channel="nightly")
+
+    def test_unknown_channel_in_available_models_fails_loudly(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Available channels: stable, testing"):
+            available_models(channel="nightly")
+
+    def test_nightly_channel_is_not_offered(self) -> None:
+        self.assertNotIn("nightly", available_channels())
+
     def test_registry_is_available_from_package_root(self) -> None:
         self.assertEqual(cvg.get_model("milo").id, "milo-1.0.0")
         self.assertIn("testing", cvg.available_channels())

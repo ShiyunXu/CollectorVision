@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import urllib.request
 from pathlib import Path
 
 from collector_vision.model_registry import ModelSpec, load_model_registry
@@ -35,9 +36,8 @@ def resolve_model_artifact(
     """Return a verified local ONNX path for a registry model.
 
     The artifact is cached by its SHA-256 digest, so exact model releases never
-    overwrite one another. Hugging Face support is imported only when a missing
-    model needs downloading; local cached and offline use have no extra runtime
-    dependency.
+    overwrite one another. Downloads use the direct Hugging Face ``resolve`` URL
+    via ``urllib.request`` — no optional dependency is required for any use.
     """
     root = cache_dir or _default_cache_dir()
     destination = root / "models" / model.sha256 / model.filename
@@ -53,7 +53,7 @@ def resolve_model_artifact(
         )
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    _download_from_hub(model, destination.parent)
+    _download_from_hub(model, destination)
     _verify_sha256(destination, model.sha256)
     return destination
 
@@ -63,21 +63,26 @@ def _default_cache_dir() -> Path:
     return base.expanduser()
 
 
-def _download_from_hub(model: ModelSpec, destination_dir: Path) -> None:
-    try:
-        from huggingface_hub import hf_hub_download
-    except ImportError as exc:
-        raise ImportError(
-            "Hugging Face model resolution requires the optional dependency. "
-            'Install it with: pip install "collectorvision[hf]"'
-        ) from exc
+def _hub_resolve_url(model: ModelSpec) -> str:
+    return f"https://huggingface.co/{model.repository}/resolve/{model.revision}/{model.filename}"
 
-    hf_hub_download(
-        repo_id=model.repository,
-        filename=model.filename,
-        revision=model.revision,
-        local_dir=destination_dir,
-    )
+
+def _download_from_hub(model: ModelSpec, destination: Path) -> None:
+    """Download a model artifact from its immutable Hugging Face revision.
+
+    Fetches the direct ``resolve`` URL with ``urllib.request`` and writes to a
+    temporary file before an atomic replace, so an interrupted download never
+    leaves a partial file at the cache destination.
+    """
+    url = _hub_resolve_url(model)
+    temp_path = destination.with_suffix(destination.suffix + ".download")
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response, temp_path.open("wb") as handle:
+            for chunk in iter(lambda: response.read(1 << 20), b""):
+                handle.write(chunk)
+        temp_path.replace(destination)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def _verify_sha256(path: Path, expected: str) -> None:

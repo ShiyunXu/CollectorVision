@@ -39,14 +39,46 @@ class ModelArtifactTests(unittest.TestCase):
             **{**self.model.__dict__, "sha256": hashlib.sha256(content).hexdigest()}
         )
 
-        def write_model(spec, destination_dir):  # noqa: ANN001
+        def write_model(spec, destination):  # noqa: ANN001
             self.assertEqual(spec, model)
-            (destination_dir / spec.filename).write_bytes(content)
+            destination.write_bytes(content)
 
         with mock.patch("collector_vision.model_artifacts._download_from_hub", write_model):
             resolved = resolve_model_artifact(model, cache_dir=self.cache_dir)
 
         self.assertEqual(resolved.read_bytes(), content)
+
+    def test_download_uses_resolve_url_via_urllib(self) -> None:
+        content = b"downloaded model"
+        model = self.model.__class__(
+            **{**self.model.__dict__, "sha256": hashlib.sha256(content).hexdigest()}
+        )
+
+        class Response:
+            def __init__(self) -> None:
+                self._chunks = [content, b""]
+
+            def read(self, _size: int = -1) -> bytes:
+                return self._chunks.pop(0)
+
+            def __enter__(self) -> "Response":
+                return self
+
+            def __exit__(self, *exc: object) -> None:
+                return None
+
+        with mock.patch("urllib.request.urlopen", return_value=Response()) as urlopen:
+            resolved = resolve_model_artifact(model, cache_dir=self.cache_dir)
+
+        url = urlopen.call_args.args[0]
+        self.assertEqual(
+            url,
+            f"https://huggingface.co/{model.repository}/resolve/{model.revision}/{model.filename}",
+        )
+        self.assertEqual(resolved.read_bytes(), content)
+        self.assertFalse(
+            list(resolved.parent.glob("*.download")), "temporary download file should be cleaned up"
+        )
 
     def test_checksum_mismatch_is_rejected(self) -> None:
         destination = self.cache_dir / "models" / self.model.sha256 / self.model.filename

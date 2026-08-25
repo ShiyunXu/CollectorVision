@@ -620,18 +620,56 @@ class WorkerRuntime {
     const embedderVersion = hashes.milo       ?? version;
     const detectorRel = this.manifest.models[this.detectorConfig.modelKey];
     const embedderRel = this.manifest.models.milo;
-    const detectorBuffer = await fetchBufferCached(
+
+    // Kick off ALL asset downloads up front.  The catalog embeddings file is by
+    // far the largest asset, and it is completely independent of the models —
+    // starting it here lets the big network transfer overlap with the model
+    // downloads AND the CPU-bound ort-web WASM session compilation below.
+    // Previously everything was serialized (download models -> compile sessions
+    // -> only THEN start the catalog), so the loading screen sat with no visible
+    // progress during the silent WASM compile and appeared hung "waiting for the
+    // catalog to download".
+    const detectorPromise = fetchBufferCached(
       `${this.assetBasePath}/${detectorRel}`,
       detectorVersion,
       (ratio, loaded, total, cached) => onStage?.("detector", ratio, loaded, total, cached),
       sizeOf(detectorRel),
     );
-    const embedderBuffer = await fetchBufferCached(
+    const embedderPromise = fetchBufferCached(
       `${this.assetBasePath}/${embedderRel}`,
       embedderVersion,
       (ratio, loaded, total, cached) => onStage?.("embedder", ratio, loaded, total, cached),
       sizeOf(embedderRel),
     );
+    const embeddingPromise = fetchBufferCached(
+      `${this.assetBasePath}/${this.manifest.catalog.embeddings}`,
+      version,
+      (ratio, loaded, total, cached) => onStage?.("catalog", ratio * 0.92, loaded, total, cached),
+      sizeOf(this.manifest.catalog.embeddings),
+    );
+    const idsPromise = fetchJsonCached(
+      `${this.assetBasePath}/${this.manifest.catalog.card_ids}`,
+      version,
+      (ratio, loaded, total, cached) => onStage?.("catalog", 0.92 + ratio * 0.08, loaded, total, cached),
+      sizeOf(this.manifest.catalog.card_ids),
+    );
+    const secondarySource = resolveSecondaryIdSource(this.manifest.catalog);
+    const secondaryPromise = secondarySource
+      ? fetchJsonCached(
+          `${this.assetBasePath}/${secondarySource.assetPath}`,
+          version,
+          undefined,
+          sizeOf(secondarySource.assetPath),
+        )
+      : Promise.resolve(null);
+    // Ensure the catalog promises are always considered "handled" so that a
+    // failing model download (awaited first, below) can't turn a still-pending
+    // catalog fetch into an unhandled rejection.  The real error, if any, is
+    // still surfaced by the explicit awaits further down.
+    const catalogSettled = Promise.allSettled([embeddingPromise, idsPromise, secondaryPromise]);
+
+    const detectorBuffer = await detectorPromise;
+    const embedderBuffer = await embedderPromise;
 
     // Use as many threads as the device has cores, capped at 4.
     // NOTE: multi-threaded WASM requires SharedArrayBuffer / COOP+COEP headers.
@@ -648,6 +686,8 @@ class WorkerRuntime {
     // WebGPU is proven broken on Android ARM (issues #9 and #12) but may work
     // on iOS (Metal) and desktop.  The enableWebGpu flag in the init message
     // lets the user opt in from Settings — see ARCHITECTURE.md Lessons Learned.
+    // These session compilations are CPU-bound and report no progress; the
+    // catalog download launched above keeps streaming in parallel meanwhile.
     const ep = this.useWebGpu ? "webgpu" : "wasm";
     this.detector = await ort.InferenceSession.create(detectorBuffer, {
       executionProviders: [ep],
@@ -659,27 +699,10 @@ class WorkerRuntime {
     this.inputNames.detector = this.detector.inputNames[0];
     this.inputNames.embedder = this.embedder.inputNames[0];
 
-    const embeddingBuffer = await fetchBufferCached(
-      `${this.assetBasePath}/${this.manifest.catalog.embeddings}`,
-      version,
-      (ratio, loaded, total, cached) => onStage?.("catalog", ratio * 0.92, loaded, total, cached),
-      sizeOf(this.manifest.catalog.embeddings),
-    );
-    const ids = await fetchJsonCached(
-      `${this.assetBasePath}/${this.manifest.catalog.card_ids}`,
-      version,
-      (ratio, loaded, total, cached) => onStage?.("catalog", 0.92 + ratio * 0.08, loaded, total, cached),
-      sizeOf(this.manifest.catalog.card_ids),
-    );
-    const secondarySource = resolveSecondaryIdSource(this.manifest.catalog);
-    const secondaryIds = secondarySource
-      ? await fetchJsonCached(
-          `${this.assetBasePath}/${secondarySource.assetPath}`,
-          version,
-          undefined,
-          sizeOf(secondarySource.assetPath),
-        )
-      : null;
+    await catalogSettled;
+    const embeddingBuffer = await embeddingPromise;
+    const ids = await idsPromise;
+    const secondaryIds = await secondaryPromise;
     // Keep the catalog in its packed float16 form.  Expanding the full MTG
     // matrix to Float32Array roughly doubles steady-state catalog memory and
     // can push iOS WebKit into tab reloads.  Search converts individual values

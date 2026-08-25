@@ -294,6 +294,10 @@ function createLoadingScreen() {
   const percent = document.getElementById("loading-percent");
   const steps = document.getElementById("loading-steps");
   const stepEls = new Map();
+  // The download stages now stream concurrently, so their progress callbacks
+  // interleave.  Track the high-water mark so the overall bar only ever moves
+  // forward instead of jumping backward when a slower stage reports in.
+  let maxPercent = 0;
 
   for (const step of LOADING_STEPS) {
     const item = document.createElement("li");
@@ -309,14 +313,16 @@ function createLoadingScreen() {
 
   function updatePercent(value) {
     const clamped = Math.max(0, Math.min(100, value));
-    fill.style.width = `${clamped}%`;
-    percent.textContent = `${Math.round(clamped)}%`;
+    maxPercent = Math.max(maxPercent, clamped);
+    fill.style.width = `${maxPercent}%`;
+    percent.textContent = `${Math.round(maxPercent)}%`;
   }
 
   return {
     start(text = "Preparing scanner runtime") {
       body.dataset.loading = "true";
       message.textContent = text;
+      maxPercent = 0;
       updatePercent(0);
     },
     progress(value, text) {
